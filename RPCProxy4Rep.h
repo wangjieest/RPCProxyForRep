@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "MemoryWriter.h"
+#include "CoreNet.h"
 #include <type_traits>
 #include "RPCProxy4Rep.generated.h"
 
@@ -18,47 +18,25 @@ protected:
 	void RPC_Reuqest(UObject* Object, const FName& FuncName, const TArray<uint8>& Buffer);
 	UFUNCTION(Client, Reliable)
 	void RPC_Notify(UObject* Object, const FName& FuncName, const TArray<uint8>& Buffer);
-	void __Internal_Call(UObject* InUserObject, FName InFunctionName, class AActor* PC, const TArray<uint8>& Buffer);
+	void __Internal_Call(UObject* InUserObject, FName InFunctionName, const TArray<uint8>& Buffer);
 
-	static void __Internal_CallRemote(class APlayerController* PC, UObject* InUserObject, const FName& InFunctionName,
+	static void __Internal_CallRemote(APlayerController* PC, UObject* InUserObject, const FName& InFunctionName,
 									  const TArray<uint8>& Buffer);
+
+	static class UPackageMap* GetPackageMap(APlayerController* PC);
+	static int64 MaxBitCount;
+
+	template<typename... Args>
+	void MemoryWrite(FArchive& Ar, Args... InArgs)
+	{
+		int Temp[] = {0, (void(Ar << InArgs), 0)...};
+		(void)(Temp);
+	}
 
 public:
 	template<typename>
 	friend struct RepRPCHelper;
 };
-
-namespace NRPCProxy4Rep
-{
-template<typename... Args>
-struct TArgsList
-{
-};
-template<typename... Args>
-struct TArgsTraits
-{
-	template<typename T, typename... S>
-	static auto GetFirstType(TArgsList<T, S...>) -> T;
-	static auto GetFirstType(TArgsList<>) -> void;
-
-	using FirstType = decltype(GetFirstType(TArgsList<Args...>()));
-	using IsPC = std::is_same<APlayerController*, std::decay_t<FirstType>>;
-};
-template<typename Skip, typename... Args>
-void MemoryWrite(std::true_type, TArray<uint8>& Buffer, Skip s, Args... InArgs)
-{
-	FMemoryWriter Writer{Buffer};
-	int Temp[] = {0, (void(Writer << InArgs), 0)...};
-	(void)(Temp);
-}
-template<typename... Args>
-void MemoryWrite(std::false_type, TArray<uint8>& Buffer, Args... InArgs)
-{
-	FMemoryWriter Writer{Buffer};
-	int Temp[] = {0, (void(Writer << InArgs), 0)...};
-	(void)(Temp);
-}
-}  // namespace NRPCProxy4Rep
 
 template<typename F>
 struct RepRPCHelper;
@@ -68,11 +46,11 @@ struct RepRPCHelper<void (UserClass::*)(Args...)>
 {
 	static auto CallRemote(APlayerController* PC, UserClass* InUserObject, const FName& InFunctionName, Args... InArgs)
 	{
-		check(InUserObject);
-		TArray<uint8> Buffer;
-		NRPCProxy4Rep::MemoryWrite(typename NRPCProxy4Rep::TArgsTraits<Args...>::IsPC(), Buffer,
-								   ((std::remove_cv_t<Args>&)InArgs)...);
-		return URPCProxy4Rep::__Internal_CallRemote(PC, InUserObject, InFunctionName, Buffer);
+		check(InUserObject && PC);
+		FNetBitWriter Writer{URPCProxy4Rep::GetPackageMap(PC), 8};
+		URPCProxy4Rep::MemoryWrite(Writer, ((std::remove_cv_t<Args>&)InArgs)...);
+		if (ensure(!Writer.IsError() || Writer.GetNumBits() > UPlayerRPCProxy::MaxBitCount))
+			URPCProxy4Rep::__Internal_CallRemote(PC, InUserObject, InFunctionName, *Writer.GetBuffer());
 	}
 };
 
