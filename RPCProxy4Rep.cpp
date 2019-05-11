@@ -3,10 +3,10 @@
 #include "RPCProxy4Rep.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+#include "Engine/NetConnection.h"
 #include "GameFramework/PlayerController.h"
 #include "PropertyPortFlags.h"
 #include "ObjectMacros.h"
-#include "MemoryReader.h"
 
 //////////////////////////////////////////////////////////////////////////
 URPCProxy4Rep::URPCProxy4Rep()
@@ -18,10 +18,11 @@ URPCProxy4Rep::URPCProxy4Rep()
 	// 	if (HasAnyFlags(RF_ClassDefaultObject))
 	// 	{
 	//		// Auto Bind To PlayerController
-	// 		UAttachedComponentRegistry::RegisterAutoSpawnComponent(APlayerController::StaticClass(),
-	// 															   URPCProxy4Rep::StaticClass());
+	// 		::RegisterAutoSpawnComponent(APlayerController::StaticClass(), URPCProxy4Rep::StaticClass());
 	// 	}
 }
+
+class UPackageMap* URPCProxy4Rep::GetPackageMap(APlayerController* PC) { return PC->GetNetConnection()->PackageMap; }
 
 void URPCProxy4Rep::__Internal_Call(UObject* InUserObject, FName InFunctionName, const TArray<uint8>& Buffer)
 {
@@ -56,7 +57,6 @@ void URPCProxy4Rep::__Internal_Call(UObject* InUserObject, FName InFunctionName,
 	bool bSucc = true;
 	do
 	{
-		// First Param Object?
 		TFieldIterator<UProperty> It(Function);
 		FNetBitReader Reader{GetPackageMap(Cast<APlayerController>(GetOwner())), const_cast<uint8*>(Buffer.GetData()),
 							 Buffer.Num() * 8};
