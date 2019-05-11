@@ -23,13 +23,12 @@ URPCProxy4Rep::URPCProxy4Rep()
 	// 	}
 }
 
-void URPCProxy4Rep::__Internal_Call(UObject* InUserObject, FName InFunctionName, class AActor* PC,
-									const TArray<uint8>& Buffer)
+void URPCProxy4Rep::__Internal_Call(UObject* InUserObject, FName InFunctionName, const TArray<uint8>& Buffer)
 {
 	UFunction* Function = InUserObject ? InUserObject->FindFunction(InFunctionName) : nullptr;
 	bool bExist = Function && Function->HasAnyFunctionFlags(FUNC_Native);
 	ensure(bExist || GetNetMode() == NM_Client);
-	if (!bExist)
+	if (!bExist || !ensure(Buffer.Num() * 8 <= MaxBitCount))
 		return;
 
 	uint8* Parms = (uint8*)FMemory_Alloca(Function->ParmsSize);
@@ -59,27 +58,8 @@ void URPCProxy4Rep::__Internal_Call(UObject* InUserObject, FName InFunctionName,
 	{
 		// First Param Object?
 		TFieldIterator<UProperty> It(Function);
-		if (PC)
-		{
-			for (; It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
-			{
-				UObjectPropertyBase* Op = dynamic_cast<UObjectPropertyBase*>(*It);
-				if (ensure(Op))
-				{
-					Op->SetObjectPropertyValue(Op->ContainerPtrToValuePtr<uint8>(Parms), PC);
-					++It;
-				}
-				else
-				{
-					bSucc = false;
-				}
-				break;
-			}
-			if (!bSucc)
-				break;
-		}
-
-		FMemoryReader Reader(Buffer);
+		FNetBitReader Reader{GetPackageMap(Cast<APlayerController>(GetOwner())), const_cast<uint8*>(Buffer.GetData()),
+							 Buffer.Num() * 8};
 		for (; It && It->HasAnyPropertyFlags(CPF_Parm); ++It)
 		{
 			if (It->HasAnyPropertyFlags(CPF_ReturnParm))
@@ -108,7 +88,7 @@ void URPCProxy4Rep::__Internal_Call(UObject* InUserObject, FName InFunctionName,
 
 void URPCProxy4Rep::RPC_Reuqest_Implementation(UObject* Object, const FName& FuncName, const TArray<uint8>& Buffer)
 {
-	__Internal_Call(Object, FuncName, GetOwner(), Buffer);
+	__Internal_Call(Object, FuncName, Buffer);
 }
 
 bool URPCProxy4Rep::RPC_Reuqest_Validate(UObject* Object, const FName& FuncName, const TArray<uint8>& Buffer)
@@ -118,7 +98,7 @@ bool URPCProxy4Rep::RPC_Reuqest_Validate(UObject* Object, const FName& FuncName,
 
 void URPCProxy4Rep::RPC_Notify_Implementation(UObject* Object, const FName& FuncName, const TArray<uint8>& Buffer)
 {
-	__Internal_Call(Object, FuncName, nullptr, Buffer);
+	__Internal_Call(Object, FuncName, Buffer);
 }
 
 void URPCProxy4Rep::__Internal_CallRemote(class APlayerController* PC, UObject* InUserObject,
@@ -141,3 +121,5 @@ void URPCProxy4Rep::__Internal_CallRemote(class APlayerController* PC, UObject* 
 		}
 	}
 }
+
+int64 URPCProxy4Rep::MaxBitCount = 1024 * 8;
