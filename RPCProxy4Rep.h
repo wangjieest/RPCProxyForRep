@@ -27,7 +27,7 @@ protected:
 	static int64 MaxBitCount;
 
 	template<typename... Args>
-	void MemoryWrite(FArchive& Ar, Args... InArgs)
+	static void MemoryWrite(FArchive& Ar, Args... InArgs)
 	{
 		int Temp[] = {0, (void(Ar << InArgs), 0)...};
 		(void)(Temp);
