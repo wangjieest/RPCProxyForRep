@@ -49,7 +49,7 @@ struct RepRPCHelper<void (UserClass::*)(Args...)>
 		check(InUserObject && PC);
 		FNetBitWriter Writer{URPCProxy4Rep::GetPackageMap(PC), 8};
 		URPCProxy4Rep::MemoryWrite(Writer, ((std::remove_cv_t<Args>&)InArgs)...);
-		if (ensure(!Writer.IsError() || Writer.GetNumBits() > UPlayerRPCProxy::MaxBitCount))
+		if (ensure(!Writer.IsError() && Writer.GetNumBits() <= UPlayerRPCProxy::MaxBitCount))
 			URPCProxy4Rep::__Internal_CallRemote(PC, InUserObject, InFunctionName, *Writer.GetBuffer());
 	}
 };
